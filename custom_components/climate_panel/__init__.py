@@ -1,12 +1,14 @@
 """Climate Panel: раздаёт PWA «Климат», шлёт Web Push при высоком CO₂ и отдаёт историю для графиков."""
 from __future__ import annotations
 
+import importlib.util
 import json
 import logging
 from datetime import datetime, timedelta
 from pathlib import Path
 
 import homeassistant.helpers.config_validation as cv
+from aiohttp import web
 from homeassistant.components.http import HomeAssistantView, StaticPathConfig
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -15,7 +17,23 @@ from homeassistant.helpers.storage import Store
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.util import dt as dt_util
 
-from .devices import DEVICES
+
+# Локальные ID устройств лежат вне папки компонента (/config/climate_panel_local/),
+# чтобы обновление через HACS их не удаляло.
+LOCAL_DIR = Path(__file__).resolve().parents[2] / "climate_panel_local"
+
+
+def _load_local_devices() -> dict:
+    path = LOCAL_DIR / "devices.py"
+    spec = importlib.util.spec_from_file_location("climate_panel_local_devices", path)
+    if not path.exists() or spec is None or spec.loader is None:
+        raise ImportError(f"Нет файла с ID устройств: {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.DEVICES
+
+
+DEVICES = _load_local_devices()
 from .webpush import Vapid, build_request
 
 _LOGGER = logging.getLogger(__name__)
@@ -147,6 +165,8 @@ def _float(state) -> float | None:
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     app_dir = Path(__file__).parent / "app"
+    # Маршрут devices.js регистрируется раньше статической папки, иначе тот перехватит запрос.
+    hass.http.register_view(DevicesJsView())
     await hass.http.async_register_static_paths(
         [StaticPathConfig(URL_BASE, str(app_dir), False)]
     )
@@ -214,6 +234,21 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     async_track_state_change_event(hass, list(CO2_ENTITIES), _co2_changed)
     async_track_state_change_event(hass, list(WATER_ENTITIES), _water_changed)
     return True
+
+
+class DevicesJsView(HomeAssistantView):
+    """Отдаёт локальный devices.js из /config/climate_panel_local/ по адресу, который ждёт приложение."""
+
+    url = "/climate_app/devices.js"
+    name = "climate_panel:devices-js"
+    requires_auth = False
+
+    async def get(self, request):
+        try:
+            body = (LOCAL_DIR / "devices.js").read_bytes()
+        except OSError:
+            return web.Response(status=404, text="Нет файла devices.js в /config/climate_panel_local/")
+        return web.Response(body=body, content_type="application/javascript", headers={"Cache-Control": "no-cache"})
 
 
 class PushKeyView(HomeAssistantView):

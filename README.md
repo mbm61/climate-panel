@@ -4,9 +4,9 @@
 
 ### Через HACS (пользовательский репозиторий)
 1. В HACS: ⋮ → «Пользовательские репозитории» → адрес `https://github.com/mbm61/climate-panel`, тип «Интеграция». Установите «Климат».
-2. Создайте локальные файлы с ID ваших устройств (их нет в репозитории). Положите их в `/config/custom_components/climate_panel/`:
-   - `app/devices.example.js` скопируйте как `app/devices.js`;
-   - `devices.example.py` скопируйте как `devices.py`;
+2. Создайте папку `/config/climate_panel_local/` (она вне компонента, HACS её не трогает) и положите в неё два файла с ID ваших устройств:
+   - `custom_components/climate_panel/app/devices.example.js` из репозитория скопируйте как `/config/climate_panel_local/devices.js`;
+   - `custom_components/climate_panel/devices.example.py` из репозитория скопируйте как `/config/climate_panel_local/devices.py`;
    заполните оба файла ID из Home Assistant. Оба файла должны содержать одни и те же ID.
 3. В `configuration.yaml` добавьте строку: `climate_panel:`
 4. «Инструменты разработчика → YAML → Перезапустить Home Assistant» (полный перезапуск).
