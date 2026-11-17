@@ -1,0 +1,10 @@
+{
+  "domain": "climate_panel",
+  "name": "Climate Panel",
+  "version": "1.0.0",
+  "documentation": "https://ваш-домен:8443/climate_app/index.html",
+  "dependencies": ["http"],
+  "codeowners": [],
+  "requirements": [],
+  "iot_class": "calculated"
+}
