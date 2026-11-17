@@ -20,14 +20,20 @@ from homeassistant.util import dt as dt_util
 
 # Локальные ID устройств лежат вне папки компонента (/config/climate_panel_local/),
 # чтобы обновление через HACS их не удаляло.
-LOCAL_DIR = Path(__file__).resolve().parents[2] / "climate_panel_local"
+# Сначала стандартный /config (как в Home Assistant), затем путь относительно компонента.
+LOCAL_CANDIDATES = [
+    Path("/config/climate_panel_local"),
+    Path(__file__).resolve().parents[2] / "climate_panel_local",
+]
+LOCAL_DIR = next((d for d in LOCAL_CANDIDATES if (d / "devices.py").exists()), LOCAL_CANDIDATES[0])
 
 
 def _load_local_devices() -> dict:
     path = LOCAL_DIR / "devices.py"
     spec = importlib.util.spec_from_file_location("climate_panel_local_devices", path)
     if not path.exists() or spec is None or spec.loader is None:
-        raise ImportError(f"Нет файла с ID устройств: {path}")
+        tried = ", ".join(str(d / "devices.py") for d in LOCAL_CANDIDATES)
+        raise ImportError(f"Нет файла с ID устройств. Проверены пути: {tried}")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module.DEVICES
