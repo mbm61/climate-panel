@@ -1,6 +1,6 @@
 # Локальные файлы с ID устройств (личные данные, не публиковать)
-app/devices.js
-devices.py
+custom_components/climate_panel/app/devices.js
+custom_components/climate_panel/devices.py
 
 # Служебные
 __pycache__/
