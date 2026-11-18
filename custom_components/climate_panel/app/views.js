@@ -178,12 +178,14 @@ export function breezerCard(r) {
   const controls = `<div class="bz-controls">
       ${ib(mode === 'fan_only', A('climate.set_hvac_mode', b.climate, { hvac_mode: 'fan_only' }), icon('fan'), 'Вентиляция')}
       ${ib(mode === 'heat', A('climate.set_hvac_mode', b.climate, { hvac_mode: 'heat' }), icon('flame'), 'Подогрев')}
-      ${ib(isAuto, `data-act="auto" data-room="${r.id}"`, icon('auto'), 'Авто')}
       ${ib(boostOn, boostOn ? A('switch.turn_off', b.boost) : A('switch.turn_on', b.boost), icon('rocket') + (boostOn && boostLeft > 0 ? `<span>${mmss(boostLeft)}</span>` : ''), 'Boost', 'boost')}
     </div>`;
-  const speedPart = isAuto
-    ? (ent(b.setpoint) ? numberRow(b.setpoint, 'Уставка CO₂', { unit: 'ppm', step: 50 }) : '')
-    : `<div class="label">Скорость</div>${seg(speeds.map((x) => ({ v: x, l: x })), fm, (v) => A('climate.set_fan_mode', b.climate, { fan_mode: v }) + preAttr(boostOn ? [b.boost] : []), 'fans')}`;
+  // «Авто» — первая кнопка ряда скоростей; уставка CO₂ выводится под рядом, а не поверх кнопок
+  const speedBtns = [{ v: 'auto', l: 'Авто' }, ...speeds.map((x) => ({ v: x, l: x }))];
+  const speedPart = `<div class="label">Скорость</div>${seg(speedBtns, fm, (v) => (v === 'auto'
+    ? `data-act="auto" data-room="${r.id}"`
+    : A('climate.set_fan_mode', b.climate, { fan_mode: v }) + preAttr(boostOn ? [b.boost] : [])), 'fans')}
+    ${isAuto && ent(b.setpoint) ? numberRow(b.setpoint, 'Уставка CO₂', { unit: 'ppm', step: 50 }) : ''}`;
   const heatPart = heatOn ? slider({ id: b.climate, svc: 'climate.set_temperature', field: 'temperature', min: a.min_temp ?? 1, max: a.max_temp ?? 30, step: a.target_temp_step ?? 1, value: parseFloat(a.temperature), unit: '°C', label: 'Подогрев притока до' }) : '';
   return devCard(heatOn ? tint('heat', r) : tint('vent', r), r.name, 'Бризер', controls + speedPart + heatPart, power, false);
 }
@@ -410,7 +412,7 @@ export function viewBreezer(id) {
 }
 
 /* ---------- сервис и предупреждения ---------- */
-export const APP_VERSION = '1.8.3';
+export const APP_VERSION = '1.8.4';
 const lsGet = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
 
 function serviceCard(demo) {
