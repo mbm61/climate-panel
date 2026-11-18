@@ -546,7 +546,7 @@ document.addEventListener('click', async (e) => {
       const r = roomById(act.dataset.room); const cl = r.breezer.climate;
       const cur = String(ha.get(cl)?.attributes.fan_mode);
       // повторное «Авто» переводит бризер на 2-ю скорость; первое нажатие включает «Авто»
-      const target = cur === 'auto' ? '2' : 'auto';
+      const target = cur === 'auto' ? '1' : 'auto';
       const list = [];
       if (isOnId(r.breezer.boost)) list.push(['switch', 'turn_off', {}, r.breezer.boost]);
       list.push(['climate', 'set_fan_mode', { fan_mode: target }, cl]);
@@ -557,7 +557,7 @@ document.addEventListener('click', async (e) => {
       ROOMS.forEach((r) => { if (isOnId(r.breezer.boost)) list.push(['switch', 'turn_off', {}, r.breezer.boost]); });
       ROOMS.forEach((r) => {
         const cl = r.breezer.climate;
-        const target = allAuto ? '2' : 'auto';
+        const target = allAuto ? '1' : 'auto';
         list.push(['climate', 'set_fan_mode', { fan_mode: target }, cl]);
       });
       await runCalls(list);
