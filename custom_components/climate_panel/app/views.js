@@ -152,11 +152,6 @@ const breezerOn = (r) => { const c = ent(r.breezer.climate); return !!c && c.sta
 const heatOnR = (r) => { const c = ent(r.heat.climate); return !!c && c.state === 'heat'; };
 const humOnR = (r) => { const h = ent(r.humidifier && r.humidifier.main); return !!h && h.state === 'on'; };
 
-export const lastFan = (() => { try { return JSON.parse(localStorage.getItem('climate.lastfan') || '{}'); } catch (e) { return {}; } })();
-export function rememberFan(id, v) {
-  lastFan[id] = String(v);
-  try { localStorage.setItem('climate.lastfan', JSON.stringify(lastFan)); } catch (e) { /* ignore */ }
-}
 
 function devCard(color, room, label, body, power = '', off = false) {
   return `<section class="card dev${off ? ' is-off' : ''}" style="--accent:${color}">
@@ -414,7 +409,7 @@ export function viewBreezer(id) {
 }
 
 /* ---------- сервис и предупреждения ---------- */
-export const APP_VERSION = '1.8';
+export const APP_VERSION = '1.8.1';
 const lsGet = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
 
 function serviceCard(demo) {
