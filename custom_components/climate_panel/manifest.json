@@ -1,7 +1,7 @@
 {
   "domain": "climate_panel",
   "name": "Climate Panel",
-  "version": "1.7.1",
+  "version": "1.8.0",
   "documentation": "https://ваш-домен:8443/climate_app/index.html",
   "dependencies": ["http"],
   "codeowners": [],

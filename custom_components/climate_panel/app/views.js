@@ -76,10 +76,11 @@ function ventInfo(r) {
   const fm = c.attributes.fan_mode;
   const heat = c.state === 'heat' || c.state === 'heat_cool';
   const mode = heat ? 'Подогрев' : 'Вентиляция';
-  if (isOn(b.boost)) return { state: 'boost', text: `${mode} · Boost` };
+  const tone = heat ? 'warm' : 'vent'; // цвет статуса на главной: подогрев — оранжевый, вентиляция — синий
+  if (isOn(b.boost)) return { state: 'boost', tone, text: `${mode} · Boost` };
   const base = String(fm) === 'auto' ? 'Авто' : `Скорость ${fm}`;
   const target = String(fm) === 'auto' && ent(b.setpoint) ? ` · ${fmt(val(b.setpoint), 0)} ppm` : '';
-  return { state: String(fm) === 'auto' ? 'auto' : 'on', text: `${mode} · ${base}${target}` };
+  return { state: String(fm) === 'auto' ? 'auto' : 'on', tone, text: `${mode} · ${base}${target}` };
 }
 
 
@@ -234,7 +235,7 @@ function valveCard() {
 }
 
 /* ---- главные карточки: три ряда по столбцам комнат ---- */
-const rowBadge = (b) => (b ? `<span class="badge ${b.state}">${b.text}</span>` : '');
+const rowBadge = (b) => (b ? `<span class="badge ${b.state} ${b.tone || ''}">${b.text}</span>` : '');
 function homeGrid(rs, cell, badge, extra = '') {
   const c = rs.map((r) => cell(r));
   return `<div class="dgrid ${extra}" style="--n:${rs.length}">
@@ -278,8 +279,10 @@ export function viewHome() {
 }
 
 /* ---- страницы направлений ---- */
-export function viewBreezers() { return ROOMS.map(breezerCard).join(''); }
-export function viewHeating() { return ROOMS.map(heatCard).join(''); }
+// На страницах «Бризеры» и «Отопление» Спальня и Кухня поменяны местами.
+const dirRooms = () => ['kitchen', 'nursery', 'bedroom'].map(roomById);
+export function viewBreezers() { return dirRooms().map(breezerCard).join(''); }
+export function viewHeating() { return dirRooms().map(heatCard).join(''); }
 export function viewValve() { return valveCard(); }
 export function valveOn() { return isOn(GENERAL.valve); }
 export function viewHumidity() { return ROOMS.filter((r) => r.humidifier).map(humCard).join('') || '<p class="empty">Нет увлажнителей</p>'; }
@@ -411,7 +414,7 @@ export function viewBreezer(id) {
 }
 
 /* ---------- сервис и предупреждения ---------- */
-export const APP_VERSION = '1.7';
+export const APP_VERSION = '1.8';
 const lsGet = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
 
 function serviceCard(demo) {
@@ -479,6 +482,18 @@ export const hist = { range: '24h', data: null, loading: false, error: '' };
 const ROOM_COLOR = { bedroom: '#2196f3', nursery: '#26a69a', kitchen: '#ff7043' };
 const ROOM_NAME = { bedroom: 'Спальня', nursery: 'Детская', kitchen: 'Кухня' };
 
+// Равномерные деления шкалы: шаг 1, 2, 2.5 или 5 × 10ⁿ, не больше n интервалов.
+function niceTicks(lo, hi, n) {
+  const raw = (hi - lo) / n;
+  if (!(raw > 0)) return { ticks: [lo], step: 0 };
+  const p = 10 ** Math.floor(Math.log10(raw));
+  const f = raw / p;
+  const step = (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * p;
+  const ticks = [];
+  for (let v = Math.ceil(lo / step) * step; v <= hi + 1e-9; v += step) ticks.push(Number(v.toFixed(6)));
+  return { ticks, step };
+}
+
 function lineChart(series, from, to, opt) {
   const W = 320, H = 150, L = 38, R = 8, T = 8, B = 20;
   const pts = Object.values(series).flat().map((p) => p[1]);
@@ -498,8 +513,10 @@ function lineChart(series, from, to, opt) {
   const thr = opt.threshold !== undefined
     ? `<line x1="${L}" x2="${W - R}" y1="${y(opt.threshold).toFixed(1)}" y2="${y(opt.threshold).toFixed(1)}" stroke="#d92d20" stroke-dasharray="4 3" stroke-width="1"/><text x="${W - R}" y="${(y(opt.threshold) - 3).toFixed(1)}" text-anchor="end" fill="#d92d20">${opt.threshold}</text>`
     : '';
-  const axis = `<text x="${L - 4}" y="${T + 8}" text-anchor="end">${Math.round(max)}</text>
-    <text x="${L - 4}" y="${H - B}" text-anchor="end">${Math.round(min)}</text>
+  const { ticks, step } = niceTicks(min, max, 4);
+  const dec = step < 1 ? 1 : 0;
+  const grid = ticks.map((v) => `<line class="grid" x1="${L}" x2="${W - R}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}"/><text x="${L - 4}" y="${(y(v) + 3.5).toFixed(1)}" text-anchor="end">${v.toFixed(dec)}</text>`).join('');
+  const axis = `${grid}
     <text x="${L}" y="${H - 4}">${fmtX(from)}</text>
     <text x="${W - R}" y="${H - 4}" text-anchor="end">${fmtX(to)}</text>`;
   return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${opt.label}">${thr}${lines}${axis}</svg>`;
