@@ -240,10 +240,11 @@ function homeGrid(rs, cell, badge, extra = '') {
     ${rs.map((r) => `<div class="dcell dstat">${rowBadge(badge(r))}</div>`).join('')}
   </div>`;
 }
-const breezerGrid = () => homeGrid(ROOMS,
+const homeRooms = () => ['kitchen', 'nursery', 'bedroom'].map(roomById);
+const breezerGrid = () => homeGrid(homeRooms(),
   (r) => { const m = metrics(r); return { html: `<b>${fmt(m.co2, 0)}</b><small>ppm</small>`, cls: co2Class(m.co2) }; },
   (r) => ventInfo(r), 'bz');
-const heatGrid = () => homeGrid(ROOMS,
+const heatGrid = () => homeGrid(homeRooms(),
   (r) => { const m = metrics(r); return { html: `<b>${fmt(m.t)}°</b>` }; },
   (r) => { const c = ent(r.heat.climate); if (!c || c.state === 'unavailable') return { state: 'na', text: 'Нет связи' }; if (c.state === 'heat') return { state: 'heat heating', text: `Цель: ${fmt(optVal(r.heat.climate, 'temperature', parseFloat(c.attributes.temperature)))}°` }; return { state: 'off', text: 'Выкл' }; });
 const humBadge = (r) => {
@@ -252,7 +253,7 @@ const humBadge = (r) => {
   if (h.state === 'off') return { state: 'off', text: 'Выкл' };
   return { state: 'on', text: h.attributes.mode || 'Вкл' };
 };
-const humGrid = () => homeGrid(ROOMS,
+const humGrid = () => homeGrid(homeRooms(),
   (r) => { const cur = val(r.sensors.h); return { html: `<b>${fmt(cur, 0)}%</b>` }; },
   (r) => (r.humidifier ? humBadge(r) : null));
 
@@ -409,7 +410,7 @@ export function viewBreezer(id) {
 }
 
 /* ---------- сервис и предупреждения ---------- */
-export const APP_VERSION = '1.8.2';
+export const APP_VERSION = '1.8.3';
 const lsGet = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
 
 function serviceCard(demo) {

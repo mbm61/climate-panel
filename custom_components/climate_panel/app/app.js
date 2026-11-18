@@ -545,20 +545,21 @@ document.addEventListener('click', async (e) => {
     if (a === 'auto') {
       const r = roomById(act.dataset.room); const cl = r.breezer.climate;
       const cur = String(ha.get(cl)?.attributes.fan_mode);
-      // повторное «Авто» переводит бризер на 2-ю скорость; первое нажатие включает «Авто»
-      const target = cur === 'auto' ? '1' : 'auto';
+      // первое нажатие включает «Авто»; повторное переводит на 1-ю скорость.
+      // Прошивка esphome-tion сбрасывает авто только при смене скорости, поэтому сначала ставим 2-ю, потом 1-ю.
       const list = [];
       if (isOnId(r.breezer.boost)) list.push(['switch', 'turn_off', {}, r.breezer.boost]);
-      list.push(['climate', 'set_fan_mode', { fan_mode: target }, cl]);
+      if (cur === 'auto') list.push(['climate', 'set_fan_mode', { fan_mode: '2' }, cl]);
+      list.push(['climate', 'set_fan_mode', { fan_mode: cur === 'auto' ? '1' : 'auto' }, cl]);
       await runCalls(list);
     } else if (a === 'bulk-auto') {
       const allAuto = ROOMS.every((r) => String(ha.get(r.breezer.climate)?.attributes.fan_mode) === 'auto');
       const list = [];
       ROOMS.forEach((r) => { if (isOnId(r.breezer.boost)) list.push(['switch', 'turn_off', {}, r.breezer.boost]); });
+      if (allAuto) ROOMS.forEach((r) => list.push(['climate', 'set_fan_mode', { fan_mode: '2' }, r.breezer.climate]));
       ROOMS.forEach((r) => {
         const cl = r.breezer.climate;
-        const target = allAuto ? '1' : 'auto';
-        list.push(['climate', 'set_fan_mode', { fan_mode: target }, cl]);
+        list.push(['climate', 'set_fan_mode', { fan_mode: allAuto ? '1' : 'auto' }, cl]);
       });
       await runCalls(list);
     } else if (a === 'push-on') {
