@@ -430,3 +430,8 @@ button:disabled, input:disabled { opacity: .5; }
 .tslide { display: flex; align-items: center; gap: 8px; }
 .tslide input[type=range] { flex: 1; min-width: 0; }
 .tslide .round.tbtn { flex: 0 0 36px; width: 36px; height: 36px; font-size: 20px; }
+
+/* скрытый переключатель для тактильного отклика на iPhone */
+.hapt-sw { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; overflow: hidden; }
+/* отклик на нажатие скорости бризера сразу, до ответа Home Assistant */
+.seg.fans button:active { background: color-mix(in srgb, var(--accent) 35%, transparent); transform: scale(.94); }

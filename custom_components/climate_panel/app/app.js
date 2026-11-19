@@ -257,6 +257,14 @@ function backNow() {
 }
 $back.addEventListener('click', backNow);
 
+// тактильный отклик на iPhone: нажатие на кнопку или карточку дёргает скрытый переключатель (Safari 17.4+)
+const $hapt = document.getElementById('hapticLbl');
+const HAPT_SEL = 'button, [data-nav], [data-act], [data-step], [data-svc], [data-bulk], [data-hist], [data-theme-set], [data-range], .card, .dir, .ibtn, .sw';
+document.addEventListener('click', (e) => {
+  if (!$hapt || !(e.target instanceof Element)) return;
+  if (e.target.closest(HAPT_SEL)) $hapt.click();
+}, true);
+
 const sw = { on: false, locked: false, x0: 0, y0: 0, dx: 0, hist: [] };
 document.addEventListener('touchstart', (e) => {
   sw.on = false;
@@ -523,7 +531,9 @@ document.addEventListener('click', async (e) => {
     }
     if (!Number.isFinite(base)) return;
     const next = Math.min(parseFloat(stepBtn.dataset.max), Math.max(parseFloat(stepBtn.dataset.min), base + parseFloat(stepBtn.dataset.step)));
-    ids.forEach((x) => V.setOpt(x, 'temperature', next));
+    const svcFull = stepBtn.dataset.svc || 'climate.set_temperature';
+    const field = stepBtn.dataset.field || 'temperature';
+    ids.forEach((x) => V.setOpt(x, field, next));
     const stepper = stepBtn.closest('.stepper');
     if (stepper) {
       stepper.querySelectorAll('[data-cur]').forEach((b) => { b.dataset.cur = String(next); });
@@ -542,7 +552,8 @@ document.addEventListener('click', async (e) => {
     scheduleRender();
     clearTimeout(stepTimers[key]);
     stepTimers[key] = setTimeout(() => {
-      Promise.all(ids.map((x) => ha.call('climate', 'set_temperature', { temperature: next }, x)))
+      const [dom, svcName] = svcFull.split('.');
+      Promise.all(ids.map((x) => ha.call(dom, svcName, { [field]: next }, x)))
         .catch((err) => toast(err.message)).finally(scheduleRender);
     }, 600);
     return;
