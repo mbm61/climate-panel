@@ -1,5 +1,5 @@
 // Кэш оболочки приложения: открывается мгновенно и без сети. Данные HA сюда не попадают.
-const CACHE = 'climate-shell-6587ef14f5';
+const CACHE = 'climate-shell-d0cc41c20f';
 const FILES = ['./index.html', './app.js', './ha.js', './devices.js', './rooms.js', './views.js',
   './push.js', './styles.css', './manifest.json', './icon-180.png', './icon-192.png'];
 
