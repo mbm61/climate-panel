@@ -530,6 +530,15 @@ document.addEventListener('click', async (e) => {
       const shown = stepper.querySelector('.big b');
       if (shown) shown.textContent = next.toFixed(1).replace(/\.0+$/, '').replace('.', ',');
     }
+    // кнопки −/+ у ползунка: двигаем сам ползунок и подпись, все кнопки ряда запоминают новое значение
+    const row = stepBtn.closest('.row');
+    if (row && !stepper) {
+      const rng = row.querySelector('input[type=range]');
+      if (rng) rng.value = String(next);
+      const out = row.querySelector('output');
+      if (out) out.textContent = Number(next).toFixed(Number(out.dataset.dec) || 0) + (out.dataset.unit ? ' ' + out.dataset.unit : '');
+      row.querySelectorAll('[data-step]').forEach((b) => { b.dataset.cur = String(next); });
+    }
     scheduleRender();
     clearTimeout(stepTimers[key]);
     stepTimers[key] = setTimeout(() => {

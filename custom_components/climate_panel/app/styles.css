@@ -425,3 +425,8 @@ button:disabled, input:disabled { opacity: .5; }
 
 /* v1.8: горизонтальная сетка и подписи шкалы графиков */
 .chart .grid { stroke: var(--stroke); stroke-width: 1; }
+
+/* −/+ по бокам ползунка температуры */
+.tslide { display: flex; align-items: center; gap: 8px; }
+.tslide input[type=range] { flex: 1; min-width: 0; }
+.tslide .round.tbtn { flex: 0 0 36px; width: 36px; height: 36px; font-size: 20px; }

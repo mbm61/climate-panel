@@ -114,12 +114,17 @@ function warnings(r) {
 /* ---------- компоненты ---------- */
 const seg = (items, active, mk, cls = '') => `<div class="seg ${cls}">${items.map((i) => `<button class="${String(i.v) === String(active) ? 'on' : ''}" ${mk(i.v)}>${i.l}</button>`).join('')}</div>`;
 
+// кнопки −/+ по бокам ползунка температуры, шаг 1°
+const tBtn = (dir, ids, min, max, cur) => `<button class="round tbtn" data-step="${dir}" data-ents="${esc(JSON.stringify(ids))}" data-ent="${ids[0]}" data-cur="${cur}" data-min="${min}" data-max="${max}" aria-label="${dir < 0 ? 'Меньше' : 'Больше'}">${dir < 0 ? '−' : '+'}</button>`;
+const tWrap = (input, ids, min, max, cur) => `<div class="tslide">${tBtn(-1, ids, min, max, cur)}${input}${tBtn(1, ids, min, max, cur)}</div>`;
+
 function slider({ id, svc, field, min, max, step, value, unit = '', label, hint, valFmt, dec = 0 }) {
   const v = optVal(id, field, value);
   const shown = Number.isFinite(v) ? v : min;
+  const input = `<input type="range" min="${min}" max="${max}" step="${step}" value="${shown}" ${A(svc, id, {})} data-field="${field}">`;
   return `<div class="row">
     <div class="row-top"><span>${label}</span><output data-unit="${esc(unit)}" data-dec="${dec}">${fmt(shown, dec)}${unit ? ' ' + esc(unit) : ''}</output></div>
-    <input type="range" min="${min}" max="${max}" step="${step}" value="${shown}" ${A(svc, id, {})} data-field="${field}">
+    ${field === 'temperature' ? tWrap(input, [id], min, max, shown) : input}
     ${hint ? `<div class="hint">${hint}</div>` : ''}
   </div>`;
 }
@@ -289,8 +294,9 @@ export function viewHumidity() { return ROOMS.filter((r) => r.humidifier).map(hu
 function bulkSlider(ids, svc, field, min, max, step, value, unit, label) {
   const dec = step < 1 ? 1 : 0;
   const v = Number.isFinite(value) ? value : min;
+  const input = `<input type="range" min="${min}" max="${max}" step="${step}" value="${v}" data-svc="${svc}" data-ents="${esc(JSON.stringify(ids))}" data-args="{}" data-field="${field}">`;
   return `<div class="row"><div class="row-top"><span>${label}</span><output data-unit="${esc(unit)}" data-dec="${dec}">${fmt(v, dec)} ${esc(unit)}</output></div>
-    <input type="range" min="${min}" max="${max}" step="${step}" value="${v}" data-svc="${svc}" data-ents="${esc(JSON.stringify(ids))}" data-args="{}" data-field="${field}"></div>`;
+    ${field === 'temperature' ? tWrap(input, ids, min, max, v) : input}</div>`;
 }
 
 export function viewBulk(kind) {
@@ -412,7 +418,7 @@ export function viewBreezer(id) {
 }
 
 /* ---------- сервис и предупреждения ---------- */
-export const APP_VERSION = '1.8.4';
+export const APP_VERSION = '1.8.5';
 const lsGet = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
 
 function serviceCard(demo) {
