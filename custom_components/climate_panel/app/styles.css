@@ -435,3 +435,7 @@ button:disabled, input:disabled { opacity: .5; }
 .hapt-sw { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; overflow: hidden; }
 /* отклик на нажатие скорости бризера сразу, до ответа Home Assistant */
 .seg.fans button:active { background: color-mix(in srgb, var(--accent) 35%, transparent); transform: scale(.94); }
+
+/* прозрачная подпись поверх кнопок −/+: настоящее касание даёт тактильный отклик на iPhone */
+.tslide .round.tbtn { position: relative; }
+.tap-lbl { position: absolute; inset: 0; border-radius: inherit; cursor: pointer; }

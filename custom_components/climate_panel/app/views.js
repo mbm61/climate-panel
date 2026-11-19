@@ -115,7 +115,7 @@ function warnings(r) {
 const seg = (items, active, mk, cls = '') => `<div class="seg ${cls}">${items.map((i) => `<button class="${String(i.v) === String(active) ? 'on' : ''}" ${mk(i.v)}>${i.l}</button>`).join('')}</div>`;
 
 // кнопки −/+ по бокам ползунка температуры, шаг 1°
-const tBtn = (dir, ids, min, max, cur, step, svc, field) => `<button class="round tbtn" data-step="${dir * step}" data-svc="${svc}" data-field="${field}" data-ents="${esc(JSON.stringify(ids))}" data-ent="${ids[0]}" data-cur="${cur}" data-min="${min}" data-max="${max}" aria-label="${dir < 0 ? 'Меньше' : 'Больше'}">${dir < 0 ? '−' : '+'}</button>`;
+const tBtn = (dir, ids, min, max, cur, step, svc, field) => `<button class="round tbtn" data-step="${dir * step}" data-svc="${svc}" data-field="${field}" data-ents="${esc(JSON.stringify(ids))}" data-ent="${ids[0]}" data-cur="${cur}" data-min="${min}" data-max="${max}" aria-label="${dir < 0 ? 'Меньше' : 'Больше'}">${dir < 0 ? '−' : '+'}<label for="hapticSw" class="tap-lbl" aria-hidden="true"></label></button>`;
 const tWrap = (input, ids, min, max, cur, step, svc, field) => `<div class="tslide">${tBtn(-1, ids, min, max, cur, step, svc, field)}${input}${tBtn(1, ids, min, max, cur, step, svc, field)}</div>`;
 // кнопки −/+ есть у температуры (шаг 1°) и у уставки CO₂ (шаг 50 ppm)
 const stepFor = (svc, field, step) => (field === 'temperature' ? 1 : (svc === 'number.set_value' && field === 'value' ? step : 0));
@@ -420,7 +420,7 @@ export function viewBreezer(id) {
 }
 
 /* ---------- сервис и предупреждения ---------- */
-export const APP_VERSION = '1.8.6';
+export const APP_VERSION = '1.8.7';
 const lsGet = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
 
 function serviceCard(demo) {
