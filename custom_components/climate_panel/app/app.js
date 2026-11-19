@@ -262,6 +262,8 @@ const $hapt = document.getElementById('hapticLbl');
 const HAPT_SEL = 'button, [data-nav], [data-act], [data-step], [data-svc], [data-bulk], [data-hist], [data-theme-set], [data-range], .card, .dir, .ibtn, .sw';
 document.addEventListener('click', (e) => {
   if (!$hapt || !(e.target instanceof Element)) return;
+  // поля ввода и подписи не трогаем: программный клик по переключателю уводит фокус из поля
+  if (e.target.closest('input, textarea, select, label')) return;
   if (e.target.closest(HAPT_SEL)) $hapt.click();
 }, true);
 
