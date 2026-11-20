@@ -1,9 +1,7 @@
-import { DEV } from './devices.js';
-
 // Соответствие «комната → сущности». Права пользователя не позволяют читать реестры HA,
 // поэтому сопоставление задано здесь (источник: «Сущности и атрибуты для веб-приложения Климат»).
 
-const bz = (p) => ({
+const bz = (p) => (p ? {
   p,
   climate: `climate.${p}_${p}`,
   setpoint: `number.${p}_auto_setpoint`,
@@ -33,9 +31,9 @@ const bz = (p) => ({
   espTemp: `sensor.${p}_esp_temperature`,
   filterWorn: `binary_sensor.${p}_filter_worn_out`,
   problem: `binary_sensor.${p}_state_problem`,
-});
+} : null);
 
-const hum = (p) => ({
+const hum = (p) => (p ? {
   p,
   main: `humidifier.${p}_humidifier`,
   fan: `select.${p}_fan_level`,
@@ -47,50 +45,71 @@ const hum = (p) => ({
   alarm: `switch.${p}_alarm`,
   clean: `switch.${p}_clean`,
   lock: `switch.${p}_physical_control_locked`,
-});
+} : null);
 
-const sens = (th, co2) => ({
+const sens = (th, co2) => (th && co2 ? {
   t: `sensor.${th}_temperature`,
   h: `sensor.${th}_humidity`,
   bat: `sensor.${th}_battery`,
   batLow: `binary_sensor.${th}_battery_plus_low`,
   co2: `sensor.${co2}_co2`,
-});
+} : null);
 
-const head = (id) => ({
+const head = (id) => (id ? {
   climate: `climate.${id}`,
   local: `sensor.${id}_local_temperature`,
   bat: `sensor.${id}_battery`,
   window: `binary_sensor.${id}_window_open`,
   lock: `switch.${id}_child_lock`,
-});
+} : null);
 
-export const ROOMS = [
-  {
-    id: 'bedroom', name: 'Спальня',
-    breezer: bz(DEV.bedroom.breezer),
-    humidifier: hum(DEV.bedroom.humidifier),
-    sensors: sens(DEV.bedroom.sensor, DEV.bedroom.co2),
-    // Шаблонный «Термостат 2 комнаты»: current_temperature берётся с комнатного датчика.
-    heat: { climate: `climate.${DEV.bedroom.heatTemplate}`, template: true },
-  },
-  {
-    id: 'nursery', name: 'Детская',
-    breezer: bz(DEV.nursery.breezer),
-    humidifier: hum(DEV.nursery.humidifier),
-    sensors: sens(DEV.nursery.sensor, DEV.nursery.co2),
-    heat: head(DEV.nursery.head),
-  },
-  {
-    id: 'kitchen', name: 'Кухня',
-    breezer: bz(DEV.kitchen.breezer),
-    humidifier: null,
-    sensors: sens(DEV.kitchen.sensor, DEV.kitchen.co2),
-    heat: head(DEV.kitchen.head),
-  },
-];
+// Заполняется из devices.js (boot.js вызывает setDevices до запуска приложения).
+export let ROOMS = [];
+export let GENERAL = { valve: 'switch.krany_otopleniia' };
 
-export const GENERAL = { valve: 'switch.krany_otopleniia' };
+// Собирает комнаты из DEV. Обязательные ID проверяются здесь, чтобы ошибка была понятной.
+export function setDevices(DEV) {
+  const dev = (room) => {
+    if (!DEV[room]) throw new Error(`в devices.js нет комнаты «${room}»`);
+    return DEV[room];
+  };
+  const b = dev('bedroom'), n = dev('nursery'), k = dev('kitchen');
+  for (const [room, d] of [['bedroom', b], ['nursery', n], ['kitchen', k]]) {
+    if (!d.breezer) throw new Error(`в devices.js нет поля «breezer» для комнаты «${room}»`);
+    if (!d.sensor) throw new Error(`в devices.js нет поля «sensor» для комнаты «${room}»`);
+    if (!d.co2) throw new Error(`в devices.js нет поля «co2» для комнаты «${room}»`);
+  }
+  if (!n.head) throw new Error('в devices.js нет поля «head» для комнаты «nursery»');
+  if (!k.head) throw new Error('в devices.js нет поля «head» для комнаты «kitchen»');
+  if (!b.heatTemplate) throw new Error('в devices.js нет поля «heatTemplate» для комнаты «bedroom»');
+
+  ROOMS = [
+    {
+      id: 'bedroom', name: 'Спальня',
+      breezer: bz(b.breezer),
+      humidifier: hum(b.humidifier),
+      sensors: sens(b.sensor, b.co2),
+      // Шаблонный «Термостат 2 комнаты»: current_temperature берётся с комнатного датчика.
+      heat: { climate: `climate.${b.heatTemplate}`, template: true },
+    },
+    {
+      id: 'nursery', name: 'Детская',
+      breezer: bz(n.breezer),
+      humidifier: hum(n.humidifier),
+      sensors: sens(n.sensor, n.co2),
+      heat: head(n.head),
+    },
+    {
+      id: 'kitchen', name: 'Кухня',
+      breezer: bz(k.breezer),
+      humidifier: hum(k.humidifier),
+      sensors: sens(k.sensor, k.co2),
+      heat: head(k.head),
+    },
+  ];
+  // Клапан отопления необязателен: без поля используется прежнее значение.
+  GENERAL = { valve: DEV.valve || 'switch.krany_otopleniia' };
+}
 
 export function roomById(id) { return ROOMS.find((r) => r.id === id); }
 

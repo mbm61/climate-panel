@@ -1,24 +1,42 @@
 // Кэш оболочки приложения: открывается мгновенно и без сети. Данные HA сюда не попадают.
 const CACHE = 'climate-shell-d0cc41c20f';
-const FILES = ['./index.html', './app.js', './ha.js', './devices.js', './rooms.js', './views.js',
+// devices.js сюда не входит: он локальный и всегда берётся из сети.
+const FILES = ['./index.html', './boot.js', './app.js', './ha.js', './rooms.js', './views.js',
   './push.js', './styles.css', './manifest.json', './icon-180.png', './icon-192.png'];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES)).then(() => self.skipWaiting()));
+  // Отсутствующий файл (404) не должен ломать установку: остальные всё равно кэшируются.
+  e.waitUntil((async () => {
+    const c = await caches.open(CACHE);
+    await Promise.allSettled(FILES.map((f) => c.add(f)));
+    await self.skipWaiting();
+  })());
 });
 self.addEventListener('activate', (e) => {
   e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim()));
 });
-// stale-while-revalidate для файлов приложения
+// stale-while-revalidate для файлов приложения; devices.js — только из сети
 self.addEventListener('fetch', (e) => {
   const req = e.request;
   const url = new URL(req.url);
   if (req.method !== 'GET' || url.origin !== location.origin || !url.pathname.startsWith(new URL('./', location.href).pathname)) return;
+  if (url.pathname.endsWith('/devices.js')) {
+    e.respondWith(fetch(req, { cache: 'no-store' }));
+    return;
+  }
   e.respondWith(caches.open(CACHE).then(async (c) => {
     const hit = await c.match(req, { ignoreSearch: true });
     const net = fetch(req).then((r) => { if (r.ok) c.put(req, r.clone()); return r; }).catch(() => hit);
     return hit || net;
   }));
+});
+
+// Подписка на push могла смениться (например, после обновления службы): просим страницу переподписаться.
+self.addEventListener('pushsubscriptionchange', (e) => {
+  e.waitUntil((async () => {
+    const list = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    list.forEach((c) => c.postMessage({ type: 'push-resubscribe' }));
+  })());
 });
 
 self.addEventListener('push', (event) => {
