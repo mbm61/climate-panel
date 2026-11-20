@@ -1,6 +1,6 @@
 // Кэш оболочки приложения: открывается мгновенно и без сети. Данные HA сюда не попадают.
-const CACHE = 'climate-shell-c43ba80a4b';
-// devices.js сюда не входит: он локальный и всегда берётся из сети.
+const CACHE = 'climate-shell-v1.9.1';
+// devices.js сюда не входит: он локальный, берётся из сети, а офлайн — из последней сохранённой копии.
 const FILES = ['./index.html', './boot.js', './app.js', './ha.js', './rooms.js', './views.js',
   './push.js', './styles.css', './manifest.json', './icon-180.png', './icon-192.png'];
 
@@ -15,13 +15,25 @@ self.addEventListener('install', (e) => {
 self.addEventListener('activate', (e) => {
   e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim()));
 });
-// stale-while-revalidate для файлов приложения; devices.js — только из сети
+// stale-while-revalidate для файлов приложения; devices.js — сеть с запасом из кэша
 self.addEventListener('fetch', (e) => {
   const req = e.request;
   const url = new URL(req.url);
   if (req.method !== 'GET' || url.origin !== location.origin || !url.pathname.startsWith(new URL('./', location.href).pathname)) return;
   if (url.pathname.endsWith('/devices.js')) {
-    e.respondWith(fetch(req, { cache: 'no-store' }));
+    // сеть в первую очередь; офлайн — последняя сохранённая копия (в прекэш devices.js не входит)
+    e.respondWith((async () => {
+      const c = await caches.open(CACHE);
+      try {
+        const r = await fetch(req, { cache: 'no-store' });
+        if (r.ok) c.put(req, r.clone());
+        return r;
+      } catch (err) {
+        const hit = await c.match(req, { ignoreSearch: true });
+        if (hit) return hit;
+        throw err;
+      }
+    })());
     return;
   }
   e.respondWith(caches.open(CACHE).then(async (c) => {

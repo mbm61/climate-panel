@@ -26,7 +26,14 @@ async function boot() {
   try {
     mod = await import('./devices.js');
   } catch (err) {
-    showError('Нет файла с ID устройств', `devices.js не загружен: ${err.message || err}`);
+    // отличаем сетевой сбой от отсутствующего файла: HEAD в сеть напрямую (мимо кэша SW)
+    let offline = false;
+    try { await fetch('./devices.js', { method: 'HEAD', cache: 'no-store' }); } catch (e) { offline = true; }
+    if (offline) {
+      showError('Нет сети, откройте приложение онлайн', 'Файл с ID устройств загрузится, когда появится связь.');
+    } else {
+      showError('Нет файла с ID устройств', `devices.js не загружен: ${err.message || err}`);
+    }
     return;
   }
   try {
