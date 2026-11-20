@@ -439,3 +439,7 @@ button:disabled, input:disabled { opacity: .5; }
 /* прозрачная подпись поверх кнопок −/+: настоящее касание даёт тактильный отклик на iPhone */
 .tslide .round.tbtn { position: relative; }
 .tap-lbl { position: absolute; inset: 0; border-radius: inherit; cursor: pointer; }
+
+/* текст ошибки рядом с формой; пустой блок не занимает места */
+.status.bad { color: var(--bad); font-size: 13px; margin: 8px 0 0; }
+#f-err:empty { display: none; }
