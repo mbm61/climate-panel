@@ -49,6 +49,17 @@ const depth = (rt) => (isHome(rt) ? 0 : rt[0] === 'room' ? 2 : 1);
 const parentHash = (rt) => (rt[0] === 'room' && rt[2] ? '#/breezers' : depth(rt) > 0 ? '#/' : null);
 function hasCreds() { return DEMO || !!store.get('climate.token'); }
 
+// Адрес Home Assistant: добавляет https://, если схемы нет; возвращает адрес или текст ошибки.
+function normalizeUrl(raw) {
+  const v = (raw || '').trim();
+  if (!v) return { error: 'Укажите адрес Home Assistant.' };
+  let u;
+  try { u = new URL(/^https?:\/\//i.test(v) ? v : 'https://' + v); }
+  catch (e) { return { error: 'Адрес не распознан. Пример: https://ha.example.com:8443' }; }
+  if (!/^https?:$/.test(u.protocol)) return { error: 'Адрес должен начинаться с http:// или https://' };
+  return { url: u.origin + u.pathname.replace(/\/+$/, '') };
+}
+
 function viewFor(rt) {
   if (!hasCreds() || ha.status === 'auth_error') return V.viewSetup(ha.status === 'auth_error' ? 'Токен не принят. Проверьте токен и адрес.' : setupError);
   if (rt[0] === 'room' && rt[2] === 'breezer') return V.viewBreezer(rt[1]);
@@ -117,7 +128,20 @@ function syncService(rt) {
   if (!on) svcOn = false;
 }
 
+let pendingRender = false;
+const editingNow = () => {
+  const ae = document.activeElement;
+  return !!ae && $app.contains(ae) && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName);
+};
+// Пока в поле ввода курсор, перерисовка откладывается: иначе введённый токен или адрес стираются.
+$app.addEventListener('focusout', () => {
+  if (!pendingRender) return;
+  setTimeout(() => { if (pendingRender && !editingNow()) { pendingRender = false; render(); } }, 0);
+});
+
 function render(anim) {
+  if (!anim && editingNow()) { pendingRender = true; return; }
+  pendingRender = false;
   const rt = route();
   const y = anim ? 0 : window.scrollY;
   const setup = !hasCreds() || ha.status === 'auth_error';
@@ -171,9 +195,13 @@ function renderConn() {
   $svc.setAttribute('aria-label', CONN_LABEL[s] || 'Сервис');
 }
 
+let subError = '';
 function renderBanner() {
   renderConn();
   const s = ha.status;
+  if (subError && hasCreds() && s === 'online') {
+    $banner.hidden = false; $banner.className = 'banner bad'; $banner.textContent = subError; return;
+  }
   if (!hasCreds() || s === 'online' || s === 'idle') { $banner.hidden = true; return; }
   const t = ha.cacheTs ? new Date(ha.cacheTs).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' }) : null;
   $banner.hidden = false;
@@ -187,7 +215,26 @@ function scheduleRender() {
   rt = setTimeout(() => { rt = 0; if (!busy) render(); }, 120);
 }
 ha.addEventListener('entities', scheduleRender);
-ha.addEventListener('status', () => { render(); });
+let pushSynced = false;
+ha.addEventListener('status', () => {
+  if (ha.status === 'online') {
+    subError = '';
+    // при первом подключении за запуск: если уведомления включены, перерегистрируем подписку на сервере
+    if (!pushSynced && !DEMO) { pushSynced = true; P.syncPush(ha).then(() => refreshPush()).catch(() => {}); }
+  }
+  render();
+});
+// service worker просит переподписаться (подписка сменилась в браузере)
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.addEventListener('message', (e) => {
+    if (e.data && e.data.type === 'push-resubscribe' && !DEMO) P.syncPush(ha).then(() => refreshPush()).catch(() => {});
+  });
+}
+// отказ подписки на данные (например, нет прав на сущности): показываем, а не молчим
+ha.addEventListener('error', (e) => {
+  subError = 'Не удалось подписаться на данные Home Assistant: ' + ((e.detail && e.detail.message) || 'неизвестная ошибка');
+  renderBanner();
+});
 
 window.addEventListener('hashchange', () => {
   if (DEMO) return;
@@ -365,13 +412,17 @@ function histFinish(commit) {
   }
   hs.busy = true;
   setTimeout(() => {
-    if (ok) sheetKind = 'hist-' + HIST_ORDER[histIdx() + dir];
-    if (peer) peer.remove();
-    hs.peer = null;
-    $sheetBody.style.transition = 'none'; $sheetBody.style.transform = ''; $sheetBody.style.filter = '';
-    if (ok) $sheetBody.innerHTML = sheetHtml(sheetKind);
-    void $sheetBody.offsetWidth; $sheetBody.style.transition = '';
-    hs.busy = false;
+    try {
+      // окно могли закрыть во время анимации: тогда переключать уже нечего
+      if (ok && sheetKind && sheetKind.startsWith('hist-')) sheetKind = 'hist-' + HIST_ORDER[histIdx() + dir];
+      if (peer) peer.remove();
+      hs.peer = null;
+      $sheetBody.style.transition = 'none'; $sheetBody.style.transform = ''; $sheetBody.style.filter = '';
+      if (ok && sheetKind && sheetKind.startsWith('hist-')) $sheetBody.innerHTML = sheetHtml(sheetKind);
+      void $sheetBody.offsetWidth; $sheetBody.style.transition = '';
+    } finally {
+      hs.busy = false;
+    }
   }, 310);
 }
 $sheet.addEventListener('touchstart', (e) => {
@@ -596,18 +647,20 @@ document.addEventListener('click', async (e) => {
       try { const r = await P.testPush(ha); toast(r.sent ? `Отправлено: ${r.sent}` : 'Нет активных подписок'); }
       catch (err) { toast(err.message); }
     } else if (a === 'save-creds') {
-      const url = document.getElementById('f-url').value.trim().replace(/\/+$/, '');
+      const norm = normalizeUrl(document.getElementById('f-url').value);
       const token = document.getElementById('f-token').value.trim();
-      if (!url || !token) { setupError = 'Заполните адрес и токен.'; render(); return; }
+      const url = norm.url;
+      if (norm.error || !token) { setupError = norm.error || 'Введите токен.'; render(); return; }
       setupError = '';
       store.set('climate.url', url); store.set('climate.token', token);
       ha.setCreds(url, token); ha.status = 'idle'; ha.connect(); render();
     } else if (a === 'svc-save') {
-      const raw = document.getElementById('f-url').value.trim();
+      const norm = normalizeUrl(document.getElementById('f-url').value);
       const token = document.getElementById('f-token').value.trim();
-      let url;
-      try { const u = new URL(/^https?:\/\//i.test(raw) ? raw : 'https://' + raw); if (!/^https?:$/.test(u.protocol)) throw new Error('p'); url = u.origin + u.pathname.replace(/\/+$/, ''); }
-      catch (err) { toast('Неверный адрес. Пример: https://ha.example.com:8443'); return; }
+      const errEl = document.getElementById('f-err');
+      if (norm.error) { if (errEl) errEl.textContent = norm.error; else toast(norm.error); return; }
+      if (errEl) errEl.textContent = '';
+      const url = norm.url;
       store.set('climate.url', url);
       if (token) store.set('climate.token', token);
       ha.setCreds(url, token || store.get('climate.token')); ha.status = 'idle'; ha.connect();

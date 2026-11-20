@@ -112,10 +112,10 @@ function warnings(r) {
 }
 
 /* ---------- компоненты ---------- */
-const seg = (items, active, mk, cls = '') => `<div class="seg ${cls}">${items.map((i) => `<button class="${String(i.v) === String(active) ? 'on' : ''}" ${mk(i.v)}>${i.l}</button>`).join('')}</div>`;
+const seg = (items, active, mk, cls = '') => `<div class="seg ${esc(cls)}">${items.map((i) => `<button class="${String(i.v) === String(active) ? 'on' : ''}" ${mk(i.v)}>${esc(i.l)}</button>`).join('')}</div>`;
 
 // кнопки −/+ по бокам ползунка температуры, шаг 1°
-const tBtn = (dir, ids, min, max, cur, step, svc, field) => `<button class="round tbtn" data-step="${dir * step}" data-svc="${svc}" data-field="${field}" data-ents="${esc(JSON.stringify(ids))}" data-ent="${ids[0]}" data-cur="${cur}" data-min="${min}" data-max="${max}" aria-label="${dir < 0 ? 'Меньше' : 'Больше'}">${dir < 0 ? '−' : '+'}<label for="hapticSw" class="tap-lbl" aria-hidden="true"></label></button>`;
+const tBtn = (dir, ids, min, max, cur, step, svc, field) => `<button class="round tbtn" data-step="${dir * step}" data-svc="${esc(svc)}" data-field="${esc(field)}" data-ents="${esc(JSON.stringify(ids))}" data-ent="${esc(ids[0])}" data-cur="${cur}" data-min="${min}" data-max="${max}" aria-label="${dir < 0 ? 'Меньше' : 'Больше'}">${dir < 0 ? '−' : '+'}<label for="hapticSw" class="tap-lbl" aria-hidden="true"></label></button>`;
 const tWrap = (input, ids, min, max, cur, step, svc, field) => `<div class="tslide">${tBtn(-1, ids, min, max, cur, step, svc, field)}${input}${tBtn(1, ids, min, max, cur, step, svc, field)}</div>`;
 // кнопки −/+ есть у температуры (шаг 1°) и у уставки CO₂ (шаг 50 ppm)
 const stepFor = (svc, field, step) => (field === 'temperature' ? 1 : (svc === 'number.set_value' && field === 'value' ? step : 0));
@@ -154,7 +154,7 @@ const mmss = (t) => `${Math.floor(t / 60)}:${String(Math.round(t % 60)).padStart
 const preAttr = (list) => (list && list.length ? ` data-pre="${esc(JSON.stringify(list))}"` : '');
 const M = (svc, ids, args) => `data-svc="${svc}" data-ents="${esc(JSON.stringify(ids))}" data-args="${esc(JSON.stringify(args || {}))}"`;
 const powerSw = (on, attrs, label) => `<button class="sw ${on ? 'on' : ''}" role="switch" aria-checked="${on}" aria-label="${esc(label)}" ${attrs}><i></i></button>`;
-const ib = (on, attrs, inner, label, cls = '') => `<button class="ibtn ${cls}${on ? ' on' : ''}" aria-pressed="${on}" aria-label="${label}" title="${label}" ${attrs}>${inner}</button>`;
+const ib = (on, attrs, inner, label, cls = '') => `<button class="ibtn ${esc(cls)}${on ? ' on' : ''}" aria-pressed="${on}" aria-label="${esc(label)}" title="${esc(label)}" ${attrs}>${inner}</button>`;
 const breezerOn = (r) => { const c = ent(r.breezer.climate); return !!c && c.state !== 'off' && c.state !== 'unavailable'; };
 const heatOnR = (r) => { const c = ent(r.heat.climate); return !!c && c.state === 'heat'; };
 const humOnR = (r) => { const h = ent(r.humidifier && r.humidifier.main); return !!h && h.state === 'on'; };
@@ -239,7 +239,7 @@ function valveCard() {
 }
 
 /* ---- главные карточки: три ряда по столбцам комнат ---- */
-const rowBadge = (b) => (b ? `<span class="badge ${b.state} ${b.tone || ''}">${b.text}</span>` : '');
+const rowBadge = (b) => (b ? `<span class="badge ${esc(b.state)} ${esc(b.tone || '')}">${esc(b.text)}</span>` : '');
 function homeGrid(rs, cell, badge, extra = '') {
   const c = rs.map((r) => cell(r));
   return `<div class="dgrid ${extra}" style="--n:${rs.length}">
@@ -317,7 +317,7 @@ export function viewBulk(kind) {
     const spVals = spIds.map((id) => optVal(id, 'value', val(id))).filter(Number.isFinite);
     const spAvg = spVals.length ? spVals.reduce((x, y) => x + y, 0) / spVals.length : 800;
     const spRow = sp0 ? bulkSlider(spIds, 'number.set_value', 'value', sp0.attributes.min ?? 0, sp0.attributes.max ?? 2000, 50, spAvg, 'ppm', 'Уставка CO₂ (все бризеры)') : '';
-    const sp = (x) => `<button class="${curFan === x ? 'on' : ''}" ${M('climate.set_fan_mode', ids, { fan_mode: x }) + preAttr(boostOnIds)}>${x}</button>`;
+    const sp = (x) => `<button class="${curFan === x ? 'on' : ''}" ${M('climate.set_fan_mode', ids, { fan_mode: x }) + preAttr(boostOnIds)}>${esc(x)}</button>`;
     const speedRow = `<div class="label">Скорость</div><div class="seg fans">${['1', '2', '3', '4', '5', '6'].map(sp).join('')}</div>`;
     const body = anyOn ? `<div class="bz-controls">
         ${ib(curMode === 'fan_only', M('climate.set_hvac_mode', ids, { hvac_mode: 'fan_only' }), icon('fan'), 'Вентиляция')}
@@ -420,7 +420,7 @@ export function viewBreezer(id) {
 }
 
 /* ---------- сервис и предупреждения ---------- */
-export const APP_VERSION = '1.8.9';
+export const APP_VERSION = '1.9.0';
 const lsGet = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
 
 function serviceCard(demo) {
@@ -431,6 +431,7 @@ function serviceCard(demo) {
       <label class="field">Адрес Home Assistant<input id="f-url" type="url" value="${esc(url)}" ${demo ? 'disabled' : ''} autocapitalize="off" autocorrect="off" placeholder="https://домен:8443"></label>
       <label class="field">Новый токен (необязательно)<input id="f-token" type="password" ${demo ? 'disabled' : ''} autocapitalize="off" autocorrect="off" placeholder="оставьте пустым, чтобы не менять"></label>
       <div class="actions"><button class="btn active" data-act="svc-save" ${demo ? 'disabled' : ''}>Сохранить и переподключить</button></div>
+      <p id="f-err" class="status bad" role="alert"></p>
       ${demo ? '<div class="hint">В демо адрес не меняется.</div>' : ''}
       <div class="kvs col" style="margin-top:12px">
         ${kv('Статус', sTxt)}
@@ -458,7 +459,7 @@ export function warningsCount() { return ROOMS.reduce((n, r) => n + warningsFor(
 export function warningsBad() { return ROOMS.some((r) => warningsFor(r.id).some((x) => x.lvl === 'bad')); }
 
 export function viewSetup(error) {
-  const url = localStorage.getItem('climate.url') || location.origin;
+  const url = lsGet('climate.url') || location.origin;
   return `<section class="card setup" style="--accent:${COLORS.vent}">
     <h2>Подключение к Home Assistant</h2>
     <p class="hint">Вставьте долгосрочный токен пользователя Home Assistant (профиль → Безопасность → Долгосрочные токены).</p>
