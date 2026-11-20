@@ -1,9 +1,10 @@
 {
   "domain": "climate_panel",
   "name": "Climate Panel",
-  "version": "1.8.9",
-  "documentation": "https://ваш-домен:8443/climate_app/index.html",
-  "dependencies": ["http"],
+  "version": "1.9.0",
+  "documentation": "https://github.com/mbm61/climate-panel",
+  "issue_tracker": "https://github.com/mbm61/climate-panel/issues",
+  "dependencies": ["http", "recorder"],
   "codeowners": [],
   "requirements": [],
   "iot_class": "calculated"

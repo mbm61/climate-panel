@@ -2,14 +2,18 @@
 from __future__ import annotations
 
 import importlib.util
+import ipaddress
 import json
 import logging
 from datetime import datetime, timedelta
 from pathlib import Path
+from urllib.parse import urlparse
 
 import homeassistant.helpers.config_validation as cv
 from aiohttp import web
+from homeassistant.components import persistent_notification
 from homeassistant.components.http import HomeAssistantView, StaticPathConfig
+from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.event import async_call_later, async_track_state_change_event
@@ -19,27 +23,14 @@ from homeassistant.util import dt as dt_util
 
 
 # Локальные ID устройств лежат вне папки компонента (/config/climate_panel_local/),
-# чтобы обновление через HACS их не удаляло.
-# Сначала стандартный /config (как в Home Assistant), затем путь относительно компонента.
+# чтобы обновление через HACS их не удаляло. Сначала путь из конфигурации Home Assistant,
+# затем стандартный /config и путь относительно компонента.
 LOCAL_CANDIDATES = [
     Path("/config/climate_panel_local"),
     Path(__file__).resolve().parents[2] / "climate_panel_local",
 ]
-LOCAL_DIR = next((d for d in LOCAL_CANDIDATES if (d / "devices.py").exists()), LOCAL_CANDIDATES[0])
+LOCAL_DIR: Path | None = None  # задаётся в async_setup
 
-
-def _load_local_devices() -> dict:
-    path = LOCAL_DIR / "devices.py"
-    spec = importlib.util.spec_from_file_location("climate_panel_local_devices", path)
-    if not path.exists() or spec is None or spec.loader is None:
-        tried = ", ".join(str(d / "devices.py") for d in LOCAL_CANDIDATES)
-        raise ImportError(f"Нет файла с ID устройств. Проверены пути: {tried}")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module.DEVICES
-
-
-DEVICES = _load_local_devices()
 from .webpush import Vapid, build_request
 
 _LOGGER = logging.getLogger(__name__)
@@ -48,27 +39,75 @@ DOMAIN = "climate_panel"
 URL_BASE = "/climate_app"
 STORE_VERSION = 1
 STORE_KEY = "climate_panel.push"
+NOTIFICATION_ID = "climate_panel_setup"
+# Контакт для поля sub в VAPID: Apple и Mozilla отклоняют внутренние http-адреса.
+VAPID_SUBJECT = "mailto:climate-panel@example.com"
+# Службы push, которым разрешено отправлять уведомления (защита от подставных endpoint).
+PUSH_HOSTS = ("web.push.apple.com", "updates.push.services.mozilla.com", "fcm.googleapis.com", "notify.windows.com")
 
 CO2_LIMIT = 1000  # ppm
 CO2_HOLD = 600    # секунд выше порога до уведомления (10 минут)
 
-# Соответствие с app/rooms.js: комната → (название, датчик CO₂, датчик температуры).
-# Идентификаторы устройств — в devices.py (локальный файл, не в репозитории).
+# Соответствие с app/rooms.js: комната → название. Допустимы только эти ключи.
 NAMES = {"bedroom": "Спальня", "nursery": "Детская", "kitchen": "Кухня"}
-ROOMS = {
-    rid: (NAMES[rid], f"sensor.{d['co2']}_co2", f"sensor.{d['sensor']}_temperature")
-    for rid, d in DEVICES.items()
-}
-# Датчики влажности комнат (для графика истории)
-HUM_SENSORS = {rid: f"sensor.{d['sensor']}_humidity" for rid, d in DEVICES.items()}
-CO2_ENTITIES = {v[1]: rid for rid, v in ROOMS.items()}
 
-# Увлажнители: датчик уровня воды (только комнаты, где увлажнитель есть в app/rooms.js)
-WATER_SENSORS = {
-    rid: (NAMES[rid], f"sensor.{d['humidifier']}_water_level")
-    for rid, d in DEVICES.items() if d["humidifier"]
-}
-WATER_ENTITIES = {v[1]: rid for rid, v in WATER_SENSORS.items()}
+# Заполняются из devices.py в async_setup (см. _build_maps). До этого — пусто.
+DEVICES: dict = {}
+ROOMS: dict = {}          # rid → (название, entity CO₂, entity температуры)
+HUM_SENSORS: dict = {}    # rid → entity влажности
+CO2_ENTITIES: dict = {}   # entity CO₂ → rid
+WATER_SENSORS: dict = {}  # rid → (название, entity уровня воды), только у увлажнителей
+WATER_ENTITIES: dict = {}
+
+SETUP_HELP = (
+    "Создайте в папке /config/climate_panel_local/ файлы devices.py и devices.js по образцу "
+    "devices.example.py и devices.example.js из репозитория (раздел README «Локальные ID»), "
+    "затем перезапустите Home Assistant."
+)
+
+
+def _find_local_dir(hass: HomeAssistant) -> Path | None:
+    candidates = [Path(hass.config.path("climate_panel_local")), *LOCAL_CANDIDATES]
+    return next((d for d in candidates if (d / "devices.py").exists()), None)
+
+
+def _read_devices(path: Path) -> dict:
+    spec = importlib.util.spec_from_file_location("climate_panel_local_devices", path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Не удалось открыть {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.DEVICES
+
+
+def _build_maps(devices: dict) -> None:
+    """Заполняет карты комнат из devices.py. Неизвестная комната — ошибка настройки."""
+    global DEVICES, ROOMS, HUM_SENSORS, CO2_ENTITIES, WATER_SENSORS, WATER_ENTITIES
+    for rid in devices:
+        if rid not in NAMES:
+            raise KeyError(f"неизвестная комната «{rid}» в devices.py (допустимы: {', '.join(NAMES)})")
+    DEVICES = devices
+    ROOMS = {
+        rid: (NAMES[rid], f"sensor.{d['co2']}_co2", f"sensor.{d['sensor']}_temperature")
+        for rid, d in devices.items()
+    }
+    HUM_SENSORS = {rid: f"sensor.{d['sensor']}_humidity" for rid, d in devices.items()}
+    CO2_ENTITIES = {v[1]: rid for rid, v in ROOMS.items()}
+    WATER_SENSORS = {
+        rid: (NAMES[rid], f"sensor.{d['humidifier']}_water_level")
+        for rid, d in devices.items() if d.get("humidifier")
+    }
+    WATER_ENTITIES = {v[1]: rid for rid, v in WATER_SENSORS.items()}
+
+
+def _check_entities(hass: HomeAssistant) -> None:
+    """Одно предупреждение в лог со списком сущностей, которых нет в Home Assistant."""
+    wanted = [v[1] for v in ROOMS.values()] + [v[2] for v in ROOMS.values()]
+    wanted += list(HUM_SENSORS.values()) + [v[1] for v in WATER_SENSORS.values()]
+    missing = sorted({e for e in wanted if hass.states.get(e) is None})
+    if missing:
+        _LOGGER.warning("Климат: нет сущностей в Home Assistant (проверьте devices.py): %s", ", ".join(missing))
+
 
 RANGES = {"6h": timedelta(hours=6), "24h": timedelta(hours=24), "7d": timedelta(days=7)}
 POINTS = 120  # точек на график: значения усредняются по корзинам
@@ -103,13 +142,8 @@ class PushState:
 
     @property
     def subject(self) -> str:
-        """Контакт для поля sub в JWT: адрес Home Assistant (https)."""
-        try:
-            from homeassistant.helpers.network import get_url
-
-            return get_url(self.hass, allow_internal=True, allow_ip=True, prefer_external=True)
-        except Exception:  # noqa: BLE001
-            return "https://homeassistant.local:8123"
+        """Контакт для поля sub в JWT (mailto:, так требуют службы push)."""
+        return VAPID_SUBJECT
 
     async def send_all(self, payload: dict) -> tuple[int, int]:
         """Отправляет уведомление всем подписчикам. Возвращает (отправлено, удалено)."""
@@ -117,8 +151,9 @@ class PushState:
         session = async_get_clientsession(self.hass)
         sent = removed = 0
         for sub in list(self.data["subs"]):
-            url, headers, data = build_request(
-                sub["endpoint"], sub["keys"]["p256dh"], sub["keys"]["auth"], body, self.vapid, self.subject
+            url, headers, data = await self.hass.async_add_executor_job(
+                build_request,
+                sub["endpoint"], sub["keys"]["p256dh"], sub["keys"]["auth"], body, self.vapid, self.subject,
             )
             try:
                 async with session.post(url, data=data, headers=headers, timeout=15) as resp:
@@ -170,6 +205,26 @@ def _float(state) -> float | None:
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    global LOCAL_DIR
+    local_dir = await hass.async_add_executor_job(_find_local_dir, hass)
+    try:
+        if local_dir is None:
+            tried = ", ".join(str(d / "devices.py") for d in [Path(hass.config.path("climate_panel_local")), *LOCAL_CANDIDATES])
+            raise ImportError(f"нет файла devices.py (проверены пути: {tried})")
+        devices = await hass.async_add_executor_job(_read_devices, local_dir / "devices.py")
+        _build_maps(devices)
+    except Exception as err:  # noqa: BLE001
+        _LOGGER.error("Климат не запущен: %s. %s", err, SETUP_HELP)
+        persistent_notification.async_create(
+            hass,
+            f"Климат не запущен: {err}.\n\n{SETUP_HELP}",
+            title="Климат: нет ID устройств",
+            notification_id=NOTIFICATION_ID,
+        )
+        return False
+    LOCAL_DIR = local_dir
+    persistent_notification.async_dismiss(hass, NOTIFICATION_ID)
+
     app_dir = Path(__file__).parent / "app"
     # Маршрут devices.js регистрируется раньше статической папки, иначе тот перехватит запрос.
     hass.http.register_view(DevicesJsView())
@@ -203,9 +258,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         })
 
     @callback
-    def _co2_changed(event: Event) -> None:
-        rid = CO2_ENTITIES[event.data["entity_id"]]
-        value = _float(event.data.get("new_state"))
+    def _co2_apply(rid: str, value: float | None) -> None:
         if value is not None and value > CO2_LIMIT:
             if rid not in push.timers and not push.alerted.get(rid):
                 push.timers[rid] = async_call_later(
@@ -218,10 +271,13 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             push.alerted[rid] = False
 
     @callback
-    def _water_changed(event: Event) -> None:
+    def _co2_changed(event: Event) -> None:
+        _co2_apply(CO2_ENTITIES[event.data["entity_id"]], _float(event.data.get("new_state")))
+
+    @callback
+    def _water_apply(rid: str, state) -> None:
         """Переход в «мало воды» — одно уведомление; сброс при возврате к норме."""
-        rid = WATER_ENTITIES[event.data["entity_id"]]
-        low = _water_low(event.data.get("new_state"))
+        low = _water_low(state)
         key = f"water-{rid}"
         if low is None:
             return
@@ -237,8 +293,27 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         elif not low:
             push.alerted[key] = False
 
+    @callback
+    def _water_changed(event: Event) -> None:
+        _water_apply(WATER_ENTITIES[event.data["entity_id"]], event.data.get("new_state"))
+
+    @callback
+    def _on_started(_event=None) -> None:
+        """Проверка после запуска: сенсоры уже доступны, алерты не ждут следующего события."""
+        _check_entities(hass)
+        for rid, (_, sensor, _t) in ROOMS.items():
+            state = hass.states.get(sensor)
+            if state is not None:
+                _co2_apply(rid, _float(state))
+        for rid, (_, sensor) in WATER_SENSORS.items():
+            _water_apply(rid, hass.states.get(sensor))
+
     async_track_state_change_event(hass, list(CO2_ENTITIES), _co2_changed)
     async_track_state_change_event(hass, list(WATER_ENTITIES), _water_changed)
+    if hass.is_running:
+        _on_started()
+    else:
+        hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _on_started)
     return True
 
 
@@ -250,11 +325,27 @@ class DevicesJsView(HomeAssistantView):
     requires_auth = False
 
     async def get(self, request):
+        hass: HomeAssistant = request.app["hass"]
+        path = (LOCAL_DIR / "devices.js") if LOCAL_DIR else None
         try:
-            body = (LOCAL_DIR / "devices.js").read_bytes()
+            body = await hass.async_add_executor_job(path.read_bytes) if path else b""
         except OSError:
-            return web.Response(status=404, text="Нет файла devices.js в /config/climate_panel_local/")
+            return web.Response(status=404, text="Нет файла devices.js в папке climate_panel_local")
         return web.Response(body=body, content_type="application/javascript", headers={"Cache-Control": "no-cache"})
+
+
+def _valid_endpoint(endpoint: str) -> bool:
+    """Только https и известные службы push; IP-адреса и внутренние адреса отклоняются."""
+    parsed = urlparse(endpoint)
+    host = parsed.hostname or ""
+    if parsed.scheme != "https" or not host:
+        return False
+    try:
+        ipaddress.ip_address(host)
+        return False
+    except ValueError:
+        pass
+    return any(host == h or host.endswith("." + h) for h in PUSH_HOSTS)
 
 
 class PushKeyView(HomeAssistantView):
@@ -281,6 +372,8 @@ class PushSubscribeView(HomeAssistantView):
         keys = sub.get("keys") or {}
         if not endpoint or not keys.get("p256dh") or not keys.get("auth"):
             return self.json_message("Неполная подписка", 400)
+        if not _valid_endpoint(endpoint):
+            return self.json_message("Адрес подписки не принадлежит известной службе push", 400)
         push.data["subs"] = [s for s in push.data["subs"] if s["endpoint"] != endpoint]
         push.data["subs"].append({"endpoint": endpoint, "keys": {"p256dh": keys["p256dh"], "auth": keys["auth"]}})
         await push.save()
@@ -325,25 +418,33 @@ class HistoryView(HomeAssistantView):
     requires_auth = True
 
     async def get(self, request):
-        from homeassistant.components.recorder import get_instance
-        from homeassistant.components.recorder.history import get_significant_states
-
         hass: HomeAssistant = request.app["hass"]
         rng = request.query.get("range", "24h")
         if rng not in RANGES:
             return self.json_message("Неизвестный диапазон", 400)
+        try:
+            from homeassistant.components.recorder import get_instance
+            from homeassistant.components.recorder.history import get_significant_states
+
+            instance = get_instance(hass)
+        except Exception:  # noqa: BLE001
+            return self.json_message("Журнал записей недоступен: включите интеграцию recorder", 503)
         end = dt_util.utcnow()
         start = end - RANGES[rng]
         entity_ids = [v[1] for v in ROOMS.values()] + [v[2] for v in ROOMS.values()] + list(HUM_SENSORS.values())
-        states = await get_instance(hass).async_add_executor_job(
-            lambda: get_significant_states(
-                hass, start, end, entity_ids,
-                include_start_time_state=True,
-                significant_changes_only=True,
-                minimal_response=False,
-                no_attributes=True,
+        try:
+            states = await instance.async_add_executor_job(
+                lambda: get_significant_states(
+                    hass, start, end, entity_ids,
+                    include_start_time_state=True,
+                    significant_changes_only=True,
+                    minimal_response=False,
+                    no_attributes=True,
+                )
             )
-        )
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.warning("История недоступна: %s", err)
+            return self.json_message("Журнал записей недоступен, попробуйте позже", 503)
         span = (end - start).total_seconds()
         series: dict[str, dict[str, list]] = {"co2": {}, "temp": {}, "hum": {}}
         for rid, (_, co2, temp) in ROOMS.items():
