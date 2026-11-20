@@ -1,7 +1,7 @@
 {
   "domain": "climate_panel",
   "name": "Climate Panel",
-  "version": "1.9.0",
+  "version": "1.9.1",
   "documentation": "https://github.com/mbm61/climate-panel",
   "issue_tracker": "https://github.com/mbm61/climate-panel/issues",
   "dependencies": ["http", "recorder"],

@@ -224,7 +224,7 @@ export function humCard(r) {
   const cur = val(r.sensors.h);
   const wl = st(h.water);
   const nowMx = `<div class="mx"><b>${fmt(Number.isFinite(cur) ? cur : val(h.rh), 0)}%</b><small>Сейчас</small></div>`;
-  const waterMx = `<div class="mx"><b>${wl === 'normal' ? 'норма' : wl || '—'}</b><small>Вода</small></div>`;
+  const waterMx = `<div class="mx"><b>${esc(wl === 'normal' ? 'норма' : wl || '—')}</b><small>Вода</small></div>`;
   const power = `<div class="head-r">${nowMx}${waterMx}${powerSw(on, A(on ? 'humidifier.turn_off' : 'humidifier.turn_on', h.main), 'Увлажнитель ' + r.name)}</div>`;
   const body = `${on ? slider({ id: h.main, svc: 'humidifier.set_humidity', field: 'humidity', min: a.min_humidity ?? 30, max: a.max_humidity ?? 60, step: 1, value: parseFloat(a.humidity), unit: '%', label: 'Целевая влажность' }) : ''}
     ${on && modes.length ? `<div class="bz-controls">${modes.map((m) => ib(a.mode === m, A('humidifier.set_mode', h.main, { mode: m }), icon(MODE_ICON[m] || 'drop'), m)).join('')}</div>` : ''}`;
@@ -420,7 +420,7 @@ export function viewBreezer(id) {
 }
 
 /* ---------- сервис и предупреждения ---------- */
-export const APP_VERSION = '1.9.0';
+export const APP_VERSION = '1.9.1';
 const lsGet = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
 
 function serviceCard(demo) {
