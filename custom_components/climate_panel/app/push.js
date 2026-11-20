@@ -20,15 +20,41 @@ export async function currentSubscription() {
   return reg.pushManager.getSubscription();
 }
 
+const sameBytes = (a, b) => {
+  if (!a || !b) return true; // ключ браузер не отдаёт — считаем подписку подходящей
+  const x = new Uint8Array(a), y = new Uint8Array(b);
+  return x.length === y.length && x.every((v, i) => v === y[i]);
+};
+
+// Подписка должна быть выдана на ключ, который сейчас у сервера. После смены VAPID старую отменяем.
+async function ensureSubscription(reg, publicKey) {
+  const want = keyBytes(publicKey);
+  let sub = await reg.pushManager.getSubscription();
+  if (sub && !sameBytes(sub.options && sub.options.applicationServerKey, want.buffer)) {
+    await sub.unsubscribe();
+    sub = null;
+  }
+  if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: want });
+  return sub;
+}
+
 export async function enablePush(ha) {
   const perm = await Notification.requestPermission();
   if (perm !== 'granted') throw new Error('Разрешение на уведомления не выдано. Включите его в настройках iPhone.');
   const { publicKey } = await ha.api('/climate_api/push/key');
   const reg = await navigator.serviceWorker.ready;
-  let sub = await reg.pushManager.getSubscription();
-  if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(publicKey) });
+  const sub = await ensureSubscription(reg, publicKey);
+  // Сервер принимает повторную регистрацию той же подписки (замена по endpoint), поэтому её можно повторять.
   await ha.api('/climate_api/push/subscribe', { method: 'POST', body: sub.toJSON() });
   return sub;
+}
+
+// При каждом запуске, если уведомления уже включены: проверяем ключ и заново регистрируем подписку на сервере.
+export async function syncPush(ha) {
+  if (!pushSupported() || Notification.permission !== 'granted') return false;
+  const sub = await currentSubscription();
+  if (!sub) return false;
+  return enablePush(ha).then(() => true).catch(() => false);
 }
 
 export async function disablePush(ha) {
