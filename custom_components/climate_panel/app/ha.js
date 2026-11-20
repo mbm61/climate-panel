@@ -46,13 +46,27 @@ export class HA extends EventTarget {
   // REST-запросы к сервисам приложения (push, история) с токеном доступа.
   async api(path, opts = {}) {
     if (!this.url || !this.token) throw new Error('Нет адреса или токена Home Assistant');
-    const res = await fetch(new URL(path, this.url), {
-      method: opts.method || 'GET',
-      headers: { Authorization: `Bearer ${this.token}`, 'Content-Type': 'application/json' },
-      body: opts.body ? JSON.stringify(opts.body) : undefined,
-    });
-    if (!res.ok) throw new Error(`Ошибка ${res.status}`);
-    return res.json();
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 15000); // сервер не отвечает — не висим бесконечно
+    try {
+      const res = await fetch(new URL(path, this.url), {
+        method: opts.method || 'GET',
+        headers: { Authorization: `Bearer ${this.token}`, 'Content-Type': 'application/json' },
+        body: opts.body ? JSON.stringify(opts.body) : undefined,
+        signal: ctrl.signal,
+      });
+      if (!res.ok) {
+        let detail = '';
+        try { detail = (await res.json()).message || ''; } catch (e) { /* тело не JSON */ }
+        throw new Error(detail || `Ошибка ${res.status}`);
+      }
+      return await res.json();
+    } catch (err) {
+      if (err.name === 'AbortError') throw new Error('Сервер не ответил за 15 секунд');
+      throw err;
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   _setStatus(s) {
@@ -72,7 +86,13 @@ export class HA extends EventTarget {
     } catch (e) { this._setStatus('offline'); this._scheduleRetry(); return; }
     this.ws = ws;
     this._lastRx = Date.now();
-    ws.onmessage = (ev) => { if (this.ws === ws) { this._lastRx = Date.now(); this._onMsg(JSON.parse(ev.data)); } };
+    ws.onmessage = (ev) => {
+      if (this.ws !== ws) return;
+      this._lastRx = Date.now();
+      let msg;
+      try { msg = JSON.parse(ev.data); } catch (e) { return; } // битое сообщение пропускаем, соединение не рвём
+      this._onMsg(msg);
+    };
     ws.onclose = () => { if (this.ws === ws) this._dropped(); };
     ws.onerror = () => { /* onclose последует */ };
   }
@@ -141,6 +161,7 @@ export class HA extends EventTarget {
           if (m.success) p.resolve(m.result);
           else p.reject(new Error((m.error && m.error.message) || 'Ошибка команды'));
         } else if (m.id === this._subId && !m.success) {
+          // отказ подписки на данные: приложение покажет баннер
           this.dispatchEvent(new CustomEvent('error', { detail: m.error }));
         }
         break;
